@@ -18,17 +18,65 @@ GLFWwindow* window;
 
 #include "shader/shader.hpp"
 
+#include <string.h>
+
+#include <array>
+
+#define TETRIS_GRID_X (int)(16)
+#define TETRIS_GRID_Y (int)(16)
+
+constexpr int TETRIS_GRID_N = TETRIS_GRID_X * TETRIS_GRID_Y;
+
+struct Color {
+	std::uint8_t r;
+	std::uint8_t g;
+	std::uint8_t b;
+};
+
+class TetrisPiece {
+private:
+	std::vector<std::tuple<int, int>> parts = {
+		std::tuple(0, 0),
+		std::tuple(0, -1),
+		std::tuple(-1, 0),
+		std::tuple(1, 0),
+		std::tuple(0, 1),
+	};
+public:
+	TetrisPiece() {}
+	~TetrisPiece() {}
+
+	void rotate() {
+		for (auto& part : parts) {
+			part = std::tuple(-std::get<1>(part), std::get<0>(part));
+		}
+	}
+
+	void setColors(std::array<Color, TETRIS_GRID_N>& array) {
+		int x = 8;
+		int y = 8;
+
+		for (auto part : parts) {
+			// Calculate the position
+			int xC = x + std::get<0>(part);
+			int yC = y + std::get<1>(part);
+
+			int idx = xC + (yC * TETRIS_GRID_X);
+
+			array.at(idx) = Color{ 255, 255, 255 };
+
+			if (idx == 137) std::cout << "ppppp\n";
+
+			std::cout << "X: " << xC << " Y: " << yC << '\n';
+		}
+	}
+};
+
 template <typename T>
 void bufferData(GLuint bufferId, std::vector<T>& data) {
     glBindBuffer(GL_ARRAY_BUFFER, bufferId);
     glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(T), data.data(), GL_STATIC_DRAW);
 }
-
-struct Color {
-	float r;
-	float g;
-	float b;
-};
 
 int main( void )
 {
@@ -88,39 +136,46 @@ int main( void )
 	glUseProgram(programID);
 	
     std::vector<GLfloat> vertexBufferData = {
-        -.5f, -.5f,
-        -.5f, .5f,
-        .5f, .5f,
+        -1.0, -1.0,
+		-1.0, 1.0,
+		1.0, 1.0,
 
-        -.5f, -.5f,
-        .5f, .5f,
-        .5f, -.5f
+		-1.0, -1.0,
+		1.0, 1.0,
+		1.0, -1.0
     };
-	std::vector<GLfloat> colorBuffer = {
-		1.f, 1.f, 1.f,
-		1.f, 1.f, 1.f,
-		1.f, 1.f, 1.f,
+	std::vector<GLfloat> uvBufferData = {
+		0.0, 0.0,
+		0.0, 1.0,
+		1.0, 1.0,
 
-		1.f, 1.f, 1.f,
-		1.f, 1.f, 1.f,
-		1.f, 1.f, 1.f,
+		0.0, 0.0,
+		1.0, 1.0,
+		0.0, 1.0
 	};
 
 	GLuint textureUniform = glGetUniformLocation(programID, "gameTexture");
 
-	const int w = 10;
-	const int h = 10;
 
-	Color pixel_colors[w * h] = {};
+	std::array<Color, TETRIS_GRID_N> pixel_colors;
+	pixel_colors.fill(Color{ 0, 0, 0 });
+
+	pixel_colors[0] = Color{ 127, 127, 127 };
+
+	TetrisPiece p;
+
+	p.setColors(pixel_colors);
+
+	std::cout << (int)pixel_colors[137].r << '\n';
 	
 
 	GLuint texture;
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB8, w, h);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB8, TETRIS_GRID_X, TETRIS_GRID_Y);
 
 	// Load image
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, pixel_colors);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, TETRIS_GRID_X, TETRIS_GRID_Y, GL_RGB, GL_UNSIGNED_BYTE, pixel_colors.data());
 
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
@@ -134,12 +189,12 @@ int main( void )
 	GLuint vertexbuffer;
 	glGenBuffers(1, &vertexbuffer);
 	
-	GLuint colorbuffer;
-	glGenBuffers(1, &colorbuffer);
+	GLuint uvbuffer;
+	glGenBuffers(1, &uvbuffer);
 
 	// Buffer the quad
 	bufferData(vertexbuffer, vertexBufferData);
-	bufferData(colorbuffer, colorBuffer);
+	bufferData(uvbuffer, uvBufferData);
 
 	// Some variables
     using time_point = std::chrono::system_clock::time_point;
@@ -155,8 +210,8 @@ int main( void )
 		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
 		glEnableVertexAttribArray(1);
-		glBindBuffer(GL_ARRAY_BUFFER, colorbuffer);
-		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, (void*)0);
+		glBindBuffer(GL_ARRAY_BUFFER, uvbuffer);
+		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
 
 		glDrawArrays(GL_TRIANGLES, 0, vertexBufferData.size());
 
@@ -180,7 +235,7 @@ int main( void )
 
 	// Cleanup VBO and shader
 	glDeleteBuffers(1, &vertexbuffer);
-	glDeleteBuffers(1, &colorbuffer);
+	glDeleteBuffers(1, &uvbuffer);
 
 	glDeleteProgram(programID);
 	glDeleteVertexArrays(1, &VertexArrayID);

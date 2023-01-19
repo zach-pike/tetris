@@ -19,63 +19,33 @@ GLFWwindow* window;
 #include "shader/shader.hpp"
 
 #include <string.h>
-
 #include <array>
 
-#define TETRIS_GRID_X (int)(16)
-#define TETRIS_GRID_Y (int)(16)
+#include "tetris/tetrisblock.hpp"
 
-constexpr int TETRIS_GRID_N = TETRIS_GRID_X * TETRIS_GRID_Y;
 
-struct Color {
-	std::uint8_t r;
-	std::uint8_t g;
-	std::uint8_t b;
-};
-
-class TetrisPiece {
-private:
-	std::vector<std::tuple<int, int>> parts = {
-		std::tuple(0, 0),
-		std::tuple(0, -1),
-		std::tuple(-1, 0),
-		std::tuple(1, 0),
-		std::tuple(0, 1),
-	};
-public:
-	TetrisPiece() {}
-	~TetrisPiece() {}
-
-	void rotate() {
-		for (auto& part : parts) {
-			part = std::tuple(-std::get<1>(part), std::get<0>(part));
-		}
-	}
-
-	void setColors(std::array<Color, TETRIS_GRID_N>& array) {
-		int x = 8;
-		int y = 8;
-
-		for (auto part : parts) {
-			// Calculate the position
-			int xC = x + std::get<0>(part);
-			int yC = y + std::get<1>(part);
-
-			int idx = xC + (yC * TETRIS_GRID_X);
-
-			array.at(idx) = Color{ 255, 255, 255 };
-
-			if (idx == 137) std::cout << "ppppp\n";
-
-			std::cout << "X: " << xC << " Y: " << yC << '\n';
-		}
-	}
-};
 
 template <typename T>
 void bufferData(GLuint bufferId, std::vector<T>& data) {
     glBindBuffer(GL_ARRAY_BUFFER, bufferId);
     glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(T), data.data(), GL_STATIC_DRAW);
+}
+
+void initGameTexture(GLuint& texture) {
+	glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB8, TETRIS_GRID_X, TETRIS_GRID_Y);
+
+	// Load image
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+}
+
+void setGameTexture(TetrisPiece::ColorArray& array, GLuint textureID) {
+	glBindTexture(GL_TEXTURE_2D, textureID);
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, TETRIS_GRID_X, TETRIS_GRID_Y, GL_RGB, GL_UNSIGNED_BYTE, array.data());
 }
 
 int main( void )
@@ -136,11 +106,11 @@ int main( void )
 	glUseProgram(programID);
 	
     std::vector<GLfloat> vertexBufferData = {
-        -1.0, -1.0,
-		-1.0, 1.0,
+        0.0, -1.0,
+		0.0, 1.0,
 		1.0, 1.0,
 
-		-1.0, -1.0,
+		0.0, -1.0,
 		1.0, 1.0,
 		1.0, -1.0
     };
@@ -151,60 +121,61 @@ int main( void )
 
 		0.0, 0.0,
 		1.0, 1.0,
-		0.0, 1.0
+		1.0, 0.0
 	};
-
-	GLuint textureUniform = glGetUniformLocation(programID, "gameTexture");
 
 
 	std::array<Color, TETRIS_GRID_N> pixel_colors;
-	pixel_colors.fill(Color{ 0, 0, 0 });
+	memset(pixel_colors.data(), 0, sizeof(Color) * TETRIS_GRID_N);
 
-	pixel_colors[0] = Color{ 127, 127, 127 };
-
-	TetrisPiece p;
+	TetrisPiece p(TetrisPiece::TetrisPieces::CUBE);
 
 	p.setColors(pixel_colors);
 
-	std::cout << (int)pixel_colors[137].r << '\n';
-	
-
-	GLuint texture;
-    glGenTextures(1, &texture);
-    glBindTexture(GL_TEXTURE_2D, texture);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB8, TETRIS_GRID_X, TETRIS_GRID_Y);
-
-	// Load image
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, TETRIS_GRID_X, TETRIS_GRID_Y, GL_RGB, GL_UNSIGNED_BYTE, pixel_colors.data());
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-
-    glActiveTexture(GL_TEXTURE0);
-    glUniform1i(textureUniform, 0);
-	
-
+	// Game texture draw
 	GLuint vertexbuffer;
 	glGenBuffers(1, &vertexbuffer);
-	
 	GLuint uvbuffer;
 	glGenBuffers(1, &uvbuffer);
+
+	// Game texture
+	GLuint gametexture;
+	initGameTexture(gametexture);
+
+	setGameTexture(pixel_colors, gametexture);
+    glActiveTexture(GL_TEXTURE0);
+
+	GLuint textureUniform = glGetUniformLocation(programID, "gameTexture");
+    glUniform1i(textureUniform, 0);
 
 	// Buffer the quad
 	bufferData(vertexbuffer, vertexBufferData);
 	bufferData(uvbuffer, uvBufferData);
 
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
 	// Some variables
     using time_point = std::chrono::system_clock::time_point;
     long frameDelta = std::floor(1.f / 60.f) * 1000.f;
 
+	long i = 0;
+
 	do{
+		if (i % 20 == 0) {
+			p.rotate();
+			pixel_colors.fill(Color{ 0, 0, 0 });
+			p.setColors(pixel_colors);
+			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, TETRIS_GRID_X, TETRIS_GRID_Y, GL_RGB, GL_UNSIGNED_BYTE, pixel_colors.data());
+		}
+
+		i ++;
+
         time_point frameStart = std::chrono::system_clock::now();
 		// Clear the screen
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    	
+		// Game texture drawing
 		glEnableVertexAttribArray(0);
 		glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
 		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
@@ -217,6 +188,8 @@ int main( void )
 
 		glDisableVertexAttribArray(0);
 		glDisableVertexAttribArray(1);
+
+		// End game texture drawing
 
         time_point frameEnd = std::chrono::system_clock::now();
 

@@ -31,10 +31,10 @@ void bufferData(GLuint bufferId, std::vector<T>& data) {
     glBufferData(GL_ARRAY_BUFFER, data.size() * sizeof(T), data.data(), GL_STATIC_DRAW);
 }
 
-void initGameTexture(GLuint& texture) {
+void basicTextureInit(GLuint& texture, int width, int height) {
 	glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB8, TETRIS_GRID_X, TETRIS_GRID_Y);
+    glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGB8, width, height);
 
 	// Load image
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
@@ -43,9 +43,28 @@ void initGameTexture(GLuint& texture) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 }
 
-void setGameTexture(TetrisPiece::ColorArray& array, GLuint textureID) {
+template <typename T>
+void setTextureContent(const T* array, GLuint textureID, int width, int height) {
 	glBindTexture(GL_TEXTURE_2D, textureID);
-	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, TETRIS_GRID_X, TETRIS_GRID_Y, GL_RGB, GL_UNSIGNED_BYTE, array.data());
+	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, array);
+}
+
+void drawBuffers(GLuint vertexbuffer, GLuint uvbuffer, std::size_t nVerts) {
+	// Game texture drawing
+	glEnableVertexAttribArray(0);
+
+	glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+	glEnableVertexAttribArray(1);
+
+	glBindBuffer(GL_ARRAY_BUFFER, uvbuffer);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
+
+	glDrawArrays(GL_TRIANGLES, 0, nVerts);
+
+	glDisableVertexAttribArray(0);
+	glDisableVertexAttribArray(1);
 }
 
 int main( void )
@@ -79,20 +98,16 @@ int main( void )
 		fprintf(stderr, "Failed to initialize GLEW\n");
 		getchar();
 		glfwTerminate();
-		return -1;
+		exit(-1);
 	}
 
-	// Ensure we can capture the escape key being pressed below
 	glfwSetInputMode(window, GLFW_STICKY_KEYS, GL_TRUE);
-
-	// Dark blue background
 	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
-
-	// Enable depth test
 	glEnable(GL_DEPTH_TEST);
-	// Accept fragment if it closer to the camera than the former one
 	glDepthFunc(GL_LESS); 
 
+
+	// Our VAO
 	GLuint VertexArrayID;
 	glGenVertexArrays(1, &VertexArrayID);
 	glBindVertexArray(VertexArrayID);
@@ -103,9 +118,10 @@ int main( void )
         "../src/fragment.glsl"
     );
 
+	// Use our shader program
 	glUseProgram(programID);
 	
-    std::vector<GLfloat> vertexBufferData = {
+    std::vector<GLfloat> gameVertexData = {
         0.0, -1.0,
 		0.0, 1.0,
 		1.0, 1.0,
@@ -114,6 +130,19 @@ int main( void )
 		1.0, 1.0,
 		1.0, -1.0
     };
+
+	std::vector<GLfloat> infoVertexData = {
+		-1.0, -1.0,
+		-1.0, 1.0,
+		0.0, 1.0,
+
+		-1.0, -1.0,
+		0.0, 1.0,
+		0.0, -1.0
+
+	};
+
+	// We will use this for both vertex buffers
 	std::vector<GLfloat> uvBufferData = {
 		0.0, 0.0,
 		0.0, 1.0,
@@ -124,35 +153,50 @@ int main( void )
 		1.0, 0.0
 	};
 
-
+	// Array for holding the texture pixel colors
 	std::array<Color, TETRIS_GRID_N> pixel_colors;
 	memset(pixel_colors.data(), 0, sizeof(Color) * TETRIS_GRID_N);
 
-	TetrisPiece p(TetrisPiece::TetrisPieces::CUBE);
-
+	TetrisPiece p(TetrisPiece::TetrisPieces::T);
 	p.setColors(pixel_colors);
 
+	// Info texture
+	const int infoX = 100;
+	const int infoY = 200;
+	std::array<Color, infoX * infoY> info_colors;
+	memset(info_colors.data(), 127, sizeof(Color) * infoX * infoY);
+
 	// Game texture draw
-	GLuint vertexbuffer;
-	glGenBuffers(1, &vertexbuffer);
+	GLuint gamevertexbuffer;
+	glGenBuffers(1, &gamevertexbuffer);
+
+	GLuint infovertexbuffer;
+	glGenBuffers(1, &infovertexbuffer);
+
 	GLuint uvbuffer;
 	glGenBuffers(1, &uvbuffer);
 
-	// Game texture
-	GLuint gametexture;
-	initGameTexture(gametexture);
+	// Game textures
 
-	setGameTexture(pixel_colors, gametexture);
-    glActiveTexture(GL_TEXTURE0);
+	// Info texture start
+	GLuint infotexture;
+	glActiveTexture(GL_TEXTURE0);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	basicTextureInit(infotexture, infoX, infoY);
+	setTextureContent(info_colors.data(), infotexture, infoX, infoY);
+
+	// Game texture 
+	GLuint gametexture;
+	glActiveTexture(GL_TEXTURE1);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	basicTextureInit(gametexture, TETRIS_GRID_X, TETRIS_GRID_Y);
+	setTextureContent(pixel_colors.data(), gametexture, TETRIS_GRID_X, TETRIS_GRID_Y);
 
 	GLuint textureUniform = glGetUniformLocation(programID, "gameTexture");
-    glUniform1i(textureUniform, 0);
 
-	// Buffer the quad
-	bufferData(vertexbuffer, vertexBufferData);
+	bufferData(gamevertexbuffer, gameVertexData);
+	bufferData(infovertexbuffer, infoVertexData);
 	bufferData(uvbuffer, uvBufferData);
-
-	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
 	// Some variables
     using time_point = std::chrono::system_clock::time_point;
@@ -165,29 +209,22 @@ int main( void )
 			p.rotate();
 			pixel_colors.fill(Color{ 0, 0, 0 });
 			p.setColors(pixel_colors);
-			glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, TETRIS_GRID_X, TETRIS_GRID_Y, GL_RGB, GL_UNSIGNED_BYTE, pixel_colors.data());
+			setTextureContent(pixel_colors.data(), gametexture, TETRIS_GRID_X, TETRIS_GRID_Y);
 		}
-
 		i ++;
+		
 
         time_point frameStart = std::chrono::system_clock::now();
 		// Clear the screen
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    	
+		// Draw game info texture
+		glUniform1i(textureUniform, 0);
+		drawBuffers(infovertexbuffer, uvbuffer, infoVertexData.size());
+		
 		// Game texture drawing
-		glEnableVertexAttribArray(0);
-		glBindBuffer(GL_ARRAY_BUFFER, vertexbuffer);
-		glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
-
-		glEnableVertexAttribArray(1);
-		glBindBuffer(GL_ARRAY_BUFFER, uvbuffer);
-		glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, (void*)0);
-
-		glDrawArrays(GL_TRIANGLES, 0, vertexBufferData.size());
-
-		glDisableVertexAttribArray(0);
-		glDisableVertexAttribArray(1);
+		glUniform1i(textureUniform, 1);
+		drawBuffers(gamevertexbuffer, uvbuffer, gameVertexData.size());
 
 		// End game texture drawing
 
@@ -207,7 +244,8 @@ int main( void )
 		   glfwWindowShouldClose(window) == 0 );
 
 	// Cleanup VBO and shader
-	glDeleteBuffers(1, &vertexbuffer);
+	glDeleteBuffers(1, &gamevertexbuffer);
+	glDeleteBuffers(1, &infovertexbuffer);
 	glDeleteBuffers(1, &uvbuffer);
 
 	glDeleteProgram(programID);
